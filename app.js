@@ -75,6 +75,8 @@
       state.urls.push(URL.createObjectURL(file));
     }
     await renderList();
+    setShareButtonsReady(false);
+    prepareShareFiles();
     setStatus(`${state.files.length} image${state.files.length === 1 ? "" : "s"} ready.`);
 
 }
@@ -342,244 +344,188 @@
   });
 
   renderList();
-})();
 
-
-// Custom filename + native mobile sharing
-function sanitizeOutputFilename(value) {
-  let name = String(value || "").trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\.+$/g, "");
-  return name || "images";
-}
-function outputFilename(ext) {
-  const el = document.getElementById("filenameInput");
-  return sanitizeOutputFilename(el ? el.value : "images") + "." + ext;
-}
-async function shareOrDownloadFile(blob, filename, title) {
-  const file = new File([blob], filename, {type: blob.type || "application/octet-stream"});
-  if (navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))) {
-    try { await navigator.share({title:title || filename, files:[file]}); return "shared"; }
-    catch(e) { if (e && e.name === "AbortError") return "cancelled"; }
-  }
-  const url=URL.createObjectURL(blob), a=document.createElement("a");
-  a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000); return "downloaded";
-}
-async function makePdfBlob() {
-  const {jsPDF}=window.jspdf;
-  const pdf=new jsPDF({orientation:"portrait",unit:"mm",format:"a4",compress:true});
-  for(let i=0;i<state.files.length;i++) {
-    if(i) pdf.addPage("a4","portrait");
-    const data=await fileToDataUrl(state.files[i]), img=await loadImage(data);
-    const f=fitInside(img.naturalWidth,img.naturalHeight,210,297);
-    pdf.addImage(data,mimeFor(state.files[i])==="png"?"PNG":"JPEG",(210-f.width)/2,(297-f.height)/2,f.width,f.height,undefined,"FAST");
-  }
-  return pdf.output("blob");
-}
-async function makeDocxBlob() {
-  const {Document,Packer,Paragraph,ImageRun,AlignmentType,SectionType}=window.docx;
-  const sections=[];
-  for(let i=0;i<state.files.length;i++) {
-    const file=state.files[i], data=new Uint8Array(await file.arrayBuffer()), img=await loadImage(state.urls[i]);
-    const f=fitInside(img.naturalWidth,img.naturalHeight,794,1123), t=mimeFor(file);
-    sections.push({properties:{type:i===0?SectionType.CONTINUOUS:SectionType.NEW_PAGE,page:{size:{width:11906,height:16838},margin:{top:0,right:0,bottom:0,left:0,header:0,footer:0,gutter:0}}},children:[new Paragraph({alignment:AlignmentType.CENTER,spacing:{before:0,after:0,line:0},children:[new ImageRun({data,type:t==="jpg"?"jpg":(["png","gif","bmp"].includes(t)?t:"jpg"),transformation:{width:Math.round(f.width),height:Math.round(f.height)}})]})]});
-  }
-  return Packer.toBlob(new Document({sections}));
-}
-async function doSharePdf(){try{setStatus("Preparing PDF for sharing…");const r=await shareOrDownloadFile(await makePdfBlob(),outputFilename("pdf"),"PDF");setStatus(r==="shared"?"PDF shared.":r==="cancelled"?"Share cancelled.":"PDF downloaded.")}catch(e){console.error(e);setStatus("Could not share PDF: "+(e.message||e),true)}}
-async function doShareDocx(){try{setStatus("Preparing DOCX for sharing…");const r=await shareOrDownloadFile(await makeDocxBlob(),outputFilename("docx"),"A4 DOCX");setStatus(r==="shared"?"DOCX shared.":r==="cancelled"?"Share cancelled.":"DOCX downloaded.")}catch(e){console.error(e);setStatus("Could not share DOCX: "+(e.message||e),true)}}
-
-// ===================== v1.4 FILE SHARING =====================
-function sanitizeOutputFilename(value) {
-  let name = String(value || "").trim();
-  name = name.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\.+$/g, "");
-  return name || "images";
-}
-
-function getOutputFilename(extension) {
-  const el = document.getElementById("filenameInput");
-  return sanitizeOutputFilename(el ? el.value : "images") + "." + extension;
-}
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
-
-// Important: navigator.share() MUST be called as part of the button click
-// flow. No setTimeout/Promise callback is placed before the share call.
-// This is the most reliable pattern for both iOS Safari and Android Chrome.
-async function nativeShareBlob(blob, filename, title) {
-  const file = new File([blob], filename, {
-    type: blob.type || "application/octet-stream",
-    lastModified: Date.now()
-  });
-
-  if (typeof navigator.share !== "function") {
-    downloadBlob(blob, filename);
-    return "downloaded";
+  // ---------------- v1.4 filename + reliable mobile sharing ----------------
+  function sanitizeOutputFilename(value) {
+    let name = String(value || "").trim();
+    name = name.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\.+$/g, "");
+    return name || "images";
   }
 
-  if (typeof navigator.canShare === "function") {
-    let canShareFiles = false;
+  function outputFilename(extension) {
+    const el = document.getElementById("filenameInput");
+    return sanitizeOutputFilename(el ? el.value : "images") + "." + extension;
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  // IMPORTANT:
+  // iOS Safari and some Android browsers require navigator.share() to run
+  // while the original click's user-activation is still alive.
+  // Therefore the PDF/DOCX are generated BEFORE the user taps Share.
+  let preparedPdfBlob = null;
+  let preparedDocxBlob = null;
+  let preparationId = 0;
+
+  function setShareButtonsReady(ready) {
+    const pdfShare = document.getElementById("sharePdfBtn");
+    const docxShare = document.getElementById("shareDocxBtn");
+    if (pdfShare) pdfShare.disabled = !ready;
+    if (docxShare) docxShare.disabled = !ready;
+  }
+
+  async function prepareShareFiles() {
+    const id = ++preparationId;
+    preparedPdfBlob = null;
+    preparedDocxBlob = null;
+    setShareButtonsReady(false);
+
+    if (!state.files.length) return;
+
     try {
-      canShareFiles = navigator.canShare({ files: [file] });
-    } catch (_) {}
-    if (!canShareFiles) {
-      downloadBlob(blob, filename);
-      return "downloaded";
+      setStatus("Preparing share files…");
+
+      const pdfPromise = (async () => {
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({
+          orientation: "portrait",
+          unit: "mm",
+          format: "a4",
+          compress: true
+        });
+
+        for (let i = 0; i < state.files.length; i++) {
+          if (id !== preparationId) return null;
+          if (i > 0) pdf.addPage("a4", "portrait");
+          const dataUrl = await fileToDataUrl(state.files[i]);
+          const img = await loadImage(dataUrl);
+          const fitted = fitInside(img.naturalWidth, img.naturalHeight, 210, 297);
+          pdf.addImage(
+            dataUrl,
+            mimeFor(state.files[i]) === "png" ? "PNG" : "JPEG",
+            (210 - fitted.width) / 2,
+            (297 - fitted.height) / 2,
+            fitted.width,
+            fitted.height,
+            undefined,
+            "FAST"
+          );
+        }
+        return pdf.output("blob");
+      })();
+
+      const docxPromise = (async () => {
+        const { Document, Packer, Paragraph, ImageRun, AlignmentType, SectionType } = window.docx;
+        const sections = [];
+
+        for (let i = 0; i < state.files.length; i++) {
+          if (id !== preparationId) return null;
+          const file = state.files[i];
+          const data = new Uint8Array(await file.arrayBuffer());
+          const img = await loadImage(state.urls[i]);
+          const fitted = fitInside(img.naturalWidth, img.naturalHeight, 794, 1123);
+
+          sections.push({
+            properties: {
+              type: i === 0 ? SectionType.CONTINUOUS : SectionType.NEW_PAGE,
+              page: {
+                size: { width: 11906, height: 16838 },
+                margin: {
+                  top: 0, right: 0, bottom: 0, left: 0,
+                  header: 0, footer: 0, gutter: 0
+                }
+              }
+            },
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                spacing: { before: 0, after: 0, line: 0 },
+                children: [
+                  new ImageRun({
+                    data,
+                    type: mimeFor(file) === "png" ? "png" : "jpg",
+                    transformation: {
+                      width: Math.round(fitted.width),
+                      height: Math.round(fitted.height)
+                    }
+                  })
+                ]
+              })
+            ]
+          });
+        }
+
+        return Packer.toBlob(new Document({ sections }));
+      })();
+
+      const [pdfBlob, docxBlob] = await Promise.all([pdfPromise, docxPromise]);
+
+      if (id !== preparationId || !pdfBlob || !docxBlob) return;
+
+      preparedPdfBlob = pdfBlob;
+      preparedDocxBlob = docxBlob;
+      setShareButtonsReady(true);
+      setStatus(`${state.files.length} image${state.files.length === 1 ? "" : "s"} ready.`);
+    } catch (error) {
+      console.error("Share preparation failed:", error);
+      setShareButtonsReady(false);
+      setStatus("Could not prepare sharing files: " + (error.message || error), true);
     }
   }
 
-  try {
-    await navigator.share({
-      title: title,
-      text: filename,
-      files: [file]
+  async function sharePreparedFile(blob, filename, title) {
+    if (!blob) {
+      setStatus("Please wait for the file to finish preparing.", true);
+      return;
+    }
+
+    const file = new File([blob], filename, {
+      type: blob.type || "application/octet-stream",
+      lastModified: Date.now()
     });
-    return "shared";
-  } catch (error) {
-    if (error && error.name === "AbortError") {
-      return "cancelled";
-    }
-    console.warn("Native file sharing unavailable:", error);
-    downloadBlob(blob, filename);
-    return "downloaded";
-  }
-}
 
-async function buildPdfBlobV14() {
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({
-    orientation: "portrait",
-    unit: "mm",
-    format: "a4",
-    compress: true
+    // This function is called directly by the button click.
+    // No async generation occurs before navigator.share().
+    if (typeof navigator.share === "function") {
+      if (typeof navigator.canShare !== "function" || navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            title,
+            files: [file]
+          });
+          setStatus(`${title} shared successfully.`);
+          return;
+        } catch (error) {
+          if (error && error.name === "AbortError") {
+            setStatus("Share cancelled.");
+            return;
+          }
+          console.warn("Native share failed; downloading instead:", error);
+        }
+      }
+    }
+
+    downloadBlob(blob, filename);
+    setStatus(`${title} downloaded.`);
+  }
+
+  document.getElementById("sharePdfBtn")?.addEventListener("click", async () => {
+    await sharePreparedFile(preparedPdfBlob, outputFilename("pdf"), "PDF");
   });
 
-  for (let i = 0; i < state.files.length; i++) {
-    if (i > 0) pdf.addPage("a4", "portrait");
-    const dataUrl = await fileToDataUrl(state.files[i]);
-    const img = await loadImage(dataUrl);
-    const fitted = fitInside(img.naturalWidth, img.naturalHeight, 210, 297);
-    const format = mimeFor(state.files[i]) === "png" ? "PNG" : "JPEG";
-    pdf.addImage(
-      dataUrl,
-      format,
-      (210 - fitted.width) / 2,
-      (297 - fitted.height) / 2,
-      fitted.width,
-      fitted.height,
-      undefined,
-      "FAST"
-    );
-  }
-  return pdf.output("blob");
-}
+  document.getElementById("shareDocxBtn")?.addEventListener("click", async () => {
+    await sharePreparedFile(preparedDocxBlob, outputFilename("docx"), "A4 DOCX");
+  });
 
-async function buildDocxBlobV14() {
-  const { Document, Packer, Paragraph, ImageRun, AlignmentType, SectionType } = window.docx;
-  const sections = [];
-
-  for (let i = 0; i < state.files.length; i++) {
-    const file = state.files[i];
-    const data = new Uint8Array(await file.arrayBuffer());
-    const img = await loadImage(state.urls[i]);
-    const fitted = fitInside(img.naturalWidth, img.naturalHeight, 794, 1123);
-    const kind = mimeFor(file);
-    const imageType = kind === "png" ? "png" : "jpg";
-
-    sections.push({
-      properties: {
-        type: i === 0 ? SectionType.CONTINUOUS : SectionType.NEW_PAGE,
-        page: {
-          size: { width: 11906, height: 16838 },
-          margin: {
-            top: 0, right: 0, bottom: 0, left: 0,
-            header: 0, footer: 0, gutter: 0
-          }
-        }
-      },
-      children: [
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { before: 0, after: 0, line: 0 },
-          children: [
-            new ImageRun({
-              data,
-              type: imageType,
-              transformation: {
-                width: Math.round(fitted.width),
-                height: Math.round(fitted.height)
-              }
-            })
-          ]
-        })
-      ]
-    });
-  }
-
-  return Packer.toBlob(new Document({ sections }));
-}
-
-// Share buttons are NEVER permanently disabled.
-// They check the current image list when clicked.
-document.getElementById("sharePdfBtn")?.addEventListener("click", async () => {
-  if (!state.files || state.files.length === 0) {
-    setStatus("Upload at least one image first.", true);
-    return;
-  }
-
-  const button = document.getElementById("sharePdfBtn");
-  button.disabled = true;
-  try {
-    setStatus("Creating PDF…");
-    const blob = await buildPdfBlobV14();
-    const result = await nativeShareBlob(
-      blob,
-      getOutputFilename("pdf"),
-      "PDF"
-    );
-    if (result === "shared") setStatus("PDF shared successfully.");
-    else if (result === "cancelled") setStatus("Share cancelled.");
-    else setStatus("PDF downloaded.");
-  } catch (error) {
-    console.error(error);
-    setStatus("Could not share PDF: " + (error.message || error), true);
-  } finally {
-    button.disabled = false;
-  }
-});
-
-document.getElementById("shareDocxBtn")?.addEventListener("click", async () => {
-  if (!state.files || state.files.length === 0) {
-    setStatus("Upload at least one image first.", true);
-    return;
-  }
-
-  const button = document.getElementById("shareDocxBtn");
-  button.disabled = true;
-  try {
-    setStatus("Creating A4 DOCX…");
-    const blob = await buildDocxBlobV14();
-    const result = await nativeShareBlob(
-      blob,
-      getOutputFilename("docx"),
-      "A4 DOCX"
-    );
-    if (result === "shared") setStatus("DOCX shared successfully.");
-    else if (result === "cancelled") setStatus("Share cancelled.");
-    else setStatus("DOCX downloaded.");
-  } catch (error) {
-    console.error(error);
-    setStatus("Could not share DOCX: " + (error.message || error), true);
-  } finally {
-    button.disabled = false;
-  }
-});
+  renderList();
+})();
