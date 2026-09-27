@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Image → PDF & A4 DOCX</title>
+  <meta name="description" content="Create a normal PDF and a fixed A4 Word document from images locally in your browser.">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docx@9.1.0/build/index.umd.js"></script>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <div>
+        <p class="eyebrow">LOCAL FILE TOOL</p>
+        <h1>Images → PDF + A4 DOCX</h1>
+        <p class="subtitle">Upload images, arrange their order, then download either a PDF or a fixed A4 Word document.</p>
+      </div>
+      <div class="privacy">🔒 Images stay in your browser</div>
+    </header>
+
+    <section class="card upload-card">
+      <label class="dropzone" id="dropzone">
+        <input id="fileInput" type="file" accept="image/*" multiple>
+        <span class="upload-icon">＋</span>
+        <strong>Choose images</strong>
+        <span>or drag and drop them here</span>
+        <small>JPG, PNG, GIF and BMP are supported by the DOCX generator.</small>
+      </label>
+    </section>
+
+    <section class="card">
+      <div class="section-head">
+        <div>
+          <h2>Your pages</h2>
+          <p id="count">No images selected</p>
+        </div>
+        <button class="secondary" id="clearBtn" disabled>Clear all</button>
+      </div>
+      <div id="emptyState" class="empty">Upload images to see them here.</div>
+      <ol id="imageList" class="image-list"></ol>
+    </section>
+
+    <section class="card options">
+      <div class="section-head">
+        <div>
+          <h2>Output</h2>
+          <p>Both outputs use the current image order.</p>
+        </div>
+      </div>
+
+      <div class="output-grid">
+        <article class="output">
+          <div class="output-icon">PDF</div>
+          <div>
+            <h3>Normal PDF</h3>
+            <p>One image per page, preserving the image's aspect ratio and fitting it inside an A4 portrait page.</p>
+            <button id="pdfBtn" class="primary" disabled>Download PDF</button>
+          </div>
+        </article>
+
+        <article class="output">
+          <div class="output-icon word">DOCX</div>
+          <div>
+            <h3>Fixed A4 Word document</h3>
+            <p>One image per A4 page, portrait, with zero page margins and the image fitted without cropping.</p>
+            <button id="docxBtn" class="primary" disabled>Download A4 DOCX</button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <p id="status" class="status" aria-live="polite"></p>
+
+    <footer>
+      <span>100% client-side processing.</span>
+      <span>Works as a static GitHub Pages site.</span>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
