@@ -345,7 +345,7 @@
 
   renderList();
 
-  // ---------------- v1.4 filename + reliable mobile sharing ----------------
+  // ---------------- v1.5 filename + independent share preparation ----------------
   function sanitizeOutputFilename(value) {
     let name = String(value || "").trim();
     name = name.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\.+$/g, "");
@@ -369,123 +369,128 @@
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
 
-  // IMPORTANT:
-  // iOS Safari and some Android browsers require navigator.share() to run
-  // while the original click's user-activation is still alive.
-  // Therefore the PDF/DOCX are generated BEFORE the user taps Share.
   let preparedPdfBlob = null;
   let preparedDocxBlob = null;
   let preparationId = 0;
 
-  function setShareButtonsReady(ready) {
-    const pdfShare = document.getElementById("sharePdfBtn");
-    const docxShare = document.getElementById("shareDocxBtn");
-    if (pdfShare) pdfShare.disabled = !ready;
-    if (docxShare) docxShare.disabled = !ready;
+  function setPdfShareReady(ready) {
+    const b = document.getElementById("sharePdfBtn");
+    if (b) b.disabled = !ready;
   }
 
-  async function prepareShareFiles() {
+  function setDocxShareReady(ready) {
+    const b = document.getElementById("shareDocxBtn");
+    if (b) b.disabled = !ready;
+  }
+
+  async function preparePdfShareFile(id) {
+    try {
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+        compress: true
+      });
+
+      for (let i = 0; i < state.files.length; i++) {
+        if (id !== preparationId) return;
+        if (i > 0) pdf.addPage("a4", "portrait");
+        const dataUrl = await fileToDataUrl(state.files[i]);
+        const img = await loadImage(dataUrl);
+        const fitted = fitInside(img.naturalWidth, img.naturalHeight, 210, 297);
+        pdf.addImage(
+          dataUrl,
+          mimeFor(state.files[i]) === "png" ? "PNG" : "JPEG",
+          (210 - fitted.width) / 2,
+          (297 - fitted.height) / 2,
+          fitted.width,
+          fitted.height,
+          undefined,
+          "FAST"
+        );
+      }
+
+      if (id !== preparationId) return;
+      preparedPdfBlob = pdf.output("blob");
+      setPdfShareReady(true);
+    } catch (error) {
+      console.error("PDF share preparation failed:", error);
+      preparedPdfBlob = null;
+      setPdfShareReady(false);
+    }
+  }
+
+  async function prepareDocxShareFile(id) {
+    try {
+      const { Document, Packer, Paragraph, ImageRun, AlignmentType, SectionType } = window.docx;
+      const sections = [];
+
+      for (let i = 0; i < state.files.length; i++) {
+        if (id !== preparationId) return;
+        const file = state.files[i];
+        const data = new Uint8Array(await file.arrayBuffer());
+        const img = await loadImage(state.urls[i]);
+        const fitted = fitInside(img.naturalWidth, img.naturalHeight, 794, 1123);
+
+        sections.push({
+          properties: {
+            type: i === 0 ? SectionType.CONTINUOUS : SectionType.NEW_PAGE,
+            page: {
+              size: { width: 11906, height: 16838 },
+              margin: {
+                top: 0, right: 0, bottom: 0, left: 0,
+                header: 0, footer: 0, gutter: 0
+              }
+            }
+          },
+          children: [
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              spacing: { before: 0, after: 0, line: 0 },
+              children: [
+                new ImageRun({
+                  data,
+                  type: mimeFor(file) === "png" ? "png" : "jpg",
+                  transformation: {
+                    width: Math.round(fitted.width),
+                    height: Math.round(fitted.height)
+                  }
+                })
+              ]
+            })
+          ]
+        });
+      }
+
+      const blob = await Packer.toBlob(new Document({ sections }));
+      if (id !== preparationId) return;
+      preparedDocxBlob = blob;
+      setDocxShareReady(true);
+    } catch (error) {
+      console.error("DOCX share preparation failed:", error);
+      preparedDocxBlob = null;
+      setDocxShareReady(false);
+    }
+  }
+
+  function prepareShareFiles() {
     const id = ++preparationId;
     preparedPdfBlob = null;
     preparedDocxBlob = null;
-    setShareButtonsReady(false);
+    setPdfShareReady(false);
+    setDocxShareReady(false);
 
     if (!state.files.length) return;
 
-    try {
-      setStatus("Preparing share files…");
-
-      const pdfPromise = (async () => {
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({
-          orientation: "portrait",
-          unit: "mm",
-          format: "a4",
-          compress: true
-        });
-
-        for (let i = 0; i < state.files.length; i++) {
-          if (id !== preparationId) return null;
-          if (i > 0) pdf.addPage("a4", "portrait");
-          const dataUrl = await fileToDataUrl(state.files[i]);
-          const img = await loadImage(dataUrl);
-          const fitted = fitInside(img.naturalWidth, img.naturalHeight, 210, 297);
-          pdf.addImage(
-            dataUrl,
-            mimeFor(state.files[i]) === "png" ? "PNG" : "JPEG",
-            (210 - fitted.width) / 2,
-            (297 - fitted.height) / 2,
-            fitted.width,
-            fitted.height,
-            undefined,
-            "FAST"
-          );
-        }
-        return pdf.output("blob");
-      })();
-
-      const docxPromise = (async () => {
-        const { Document, Packer, Paragraph, ImageRun, AlignmentType, SectionType } = window.docx;
-        const sections = [];
-
-        for (let i = 0; i < state.files.length; i++) {
-          if (id !== preparationId) return null;
-          const file = state.files[i];
-          const data = new Uint8Array(await file.arrayBuffer());
-          const img = await loadImage(state.urls[i]);
-          const fitted = fitInside(img.naturalWidth, img.naturalHeight, 794, 1123);
-
-          sections.push({
-            properties: {
-              type: i === 0 ? SectionType.CONTINUOUS : SectionType.NEW_PAGE,
-              page: {
-                size: { width: 11906, height: 16838 },
-                margin: {
-                  top: 0, right: 0, bottom: 0, left: 0,
-                  header: 0, footer: 0, gutter: 0
-                }
-              }
-            },
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                spacing: { before: 0, after: 0, line: 0 },
-                children: [
-                  new ImageRun({
-                    data,
-                    type: mimeFor(file) === "png" ? "png" : "jpg",
-                    transformation: {
-                      width: Math.round(fitted.width),
-                      height: Math.round(fitted.height)
-                    }
-                  })
-                ]
-              })
-            ]
-          });
-        }
-
-        return Packer.toBlob(new Document({ sections }));
-      })();
-
-      const [pdfBlob, docxBlob] = await Promise.all([pdfPromise, docxPromise]);
-
-      if (id !== preparationId || !pdfBlob || !docxBlob) return;
-
-      preparedPdfBlob = pdfBlob;
-      preparedDocxBlob = docxBlob;
-      setShareButtonsReady(true);
-      setStatus(`${state.files.length} image${state.files.length === 1 ? "" : "s"} ready.`);
-    } catch (error) {
-      console.error("Share preparation failed:", error);
-      setShareButtonsReady(false);
-      setStatus("Could not prepare sharing files: " + (error.message || error), true);
-    }
+    // Prepare independently. A DOCX failure can NEVER disable PDF sharing.
+    preparePdfShareFile(id);
+    prepareDocxShareFile(id);
   }
 
   async function sharePreparedFile(blob, filename, title) {
     if (!blob) {
-      setStatus("Please wait for the file to finish preparing.", true);
+      setStatus("This file is still being prepared. Please try again in a moment.", true);
       return;
     }
 
@@ -494,15 +499,19 @@
       lastModified: Date.now()
     });
 
-    // This function is called directly by the button click.
-    // No async generation occurs before navigator.share().
     if (typeof navigator.share === "function") {
-      if (typeof navigator.canShare !== "function" || navigator.canShare({ files: [file] })) {
+      let supported = true;
+      if (typeof navigator.canShare === "function") {
         try {
-          await navigator.share({
-            title,
-            files: [file]
-          });
+          supported = navigator.canShare({ files: [file] });
+        } catch (_) {
+          supported = false;
+        }
+      }
+
+      if (supported) {
+        try {
+          await navigator.share({ title, files: [file] });
           setStatus(`${title} shared successfully.`);
           return;
         } catch (error) {
@@ -510,7 +519,7 @@
             setStatus("Share cancelled.");
             return;
           }
-          console.warn("Native share failed; downloading instead:", error);
+          console.warn("Native share failed; using download fallback.", error);
         }
       }
     }
@@ -519,13 +528,14 @@
     setStatus(`${title} downloaded.`);
   }
 
-  document.getElementById("sharePdfBtn")?.addEventListener("click", async () => {
+    document.getElementById("sharePdfBtn")?.addEventListener("click", async () => {
     await sharePreparedFile(preparedPdfBlob, outputFilename("pdf"), "PDF");
   });
 
   document.getElementById("shareDocxBtn")?.addEventListener("click", async () => {
     await sharePreparedFile(preparedDocxBlob, outputFilename("docx"), "A4 DOCX");
   });
+
 
   renderList();
 })();
