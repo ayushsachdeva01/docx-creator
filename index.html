@@ -50,13 +50,15 @@
         </div>
       </div>
 
+      <div class="filename-row"><label for="filenameInput">File name</label><div class="filename-wrap"><input id="filenameInput" value="images" placeholder="e.g. Maths_Term_2" spellcheck="false"><span>.pdf / .docx</span></div><p>Choose the name used when downloading or sharing.</p></div>
+
       <div class="output-grid">
         <article class="output">
           <div class="output-icon">PDF</div>
           <div>
             <h3>Normal PDF</h3>
             <p>One image per page, preserving the image's aspect ratio and fitting it inside an A4 portrait page.</p>
-            <button id="pdfBtn" class="primary" disabled>Download PDF</button>
+            <div class="button-row"><button id="pdfBtn" class="primary" disabled>Download PDF</button><button id="sharePdfBtn" class="share" disabled>Share PDF</button></div>
           </div>
         </article>
 
@@ -65,7 +67,7 @@
           <div>
             <h3>Fixed A4 Word document</h3>
             <p>One image per A4 page, portrait, with zero page margins and the image fitted without cropping.</p>
-            <button id="docxBtn" class="primary" disabled>Download A4 DOCX</button>
+            <div class="button-row"><button id="docxBtn" class="primary" disabled>Download A4 DOCX</button><button id="shareDocxBtn" class="share" disabled>Share DOCX</button></div>
           </div>
         </article>
       </div>

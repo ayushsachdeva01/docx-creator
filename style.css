@@ -286,3 +286,5 @@ footer {
   .controls { grid-column: 1 / -1; justify-content: flex-end; }
   footer { flex-direction: column; gap: 5px; }
 }
+
+.filename-row{margin:0 0 18px;padding:15px;border:1px solid var(--line);border-radius:14px;background:#fbfcfd}.filename-row label{display:block;font-size:13px;font-weight:800;margin-bottom:7px}.filename-wrap{display:flex;align-items:center;border:1px solid #cbd3dc;border-radius:10px;background:#fff;overflow:hidden}.filename-wrap input{min-width:0;flex:1;border:0;outline:0;padding:11px 12px;font:inherit;font-weight:650;background:transparent}.filename-wrap span{padding-right:12px;color:#7b8590;font-size:13px;white-space:nowrap}.filename-row p{margin:6px 0 0;color:#7b8590;font-size:12px}.button-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}.button-row .primary{margin-top:0}.share{background:#eef4ff;color:#174b9d}.share:hover:not(:disabled){background:#dfeaff}

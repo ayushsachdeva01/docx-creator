@@ -196,7 +196,7 @@
         pdf.addImage(dataUrl, format, x, y, fitted.width, fitted.height, undefined, "FAST");
       }
 
-      pdf.save("images.pdf");
+      pdf.save(outputFilename("pdf"));
       setStatus("PDF downloaded.");
     } catch (err) {
       console.error(err);
@@ -281,7 +281,7 @@
       });
 
       const blob = await Packer.toBlob(doc);
-      downloadBlob(blob, "images_A4_fixed.docx");
+      downloadBlob(blob, outputFilename("docx"));
       setStatus("A4 DOCX downloaded.");
     } catch (err) {
       console.error(err);
@@ -339,3 +339,50 @@
 
   renderList();
 })();
+
+
+// Custom filename + native mobile sharing
+function sanitizeOutputFilename(value) {
+  let name = String(value || "").trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\.+$/g, "");
+  return name || "images";
+}
+function outputFilename(ext) {
+  const el = document.getElementById("filenameInput");
+  return sanitizeOutputFilename(el ? el.value : "images") + "." + ext;
+}
+async function shareOrDownloadFile(blob, filename, title) {
+  const file = new File([blob], filename, {type: blob.type || "application/octet-stream"});
+  if (navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))) {
+    try { await navigator.share({title:title || filename, files:[file]}); return "shared"; }
+    catch(e) { if (e && e.name === "AbortError") return "cancelled"; }
+  }
+  const url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000); return "downloaded";
+}
+async function makePdfBlob() {
+  const {jsPDF}=window.jspdf;
+  const pdf=new jsPDF({orientation:"portrait",unit:"mm",format:"a4",compress:true});
+  for(let i=0;i<state.files.length;i++) {
+    if(i) pdf.addPage("a4","portrait");
+    const data=await fileToDataUrl(state.files[i]), img=await loadImage(data);
+    const f=fitInside(img.naturalWidth,img.naturalHeight,210,297);
+    pdf.addImage(data,mimeFor(state.files[i])==="png"?"PNG":"JPEG",(210-f.width)/2,(297-f.height)/2,f.width,f.height,undefined,"FAST");
+  }
+  return pdf.output("blob");
+}
+async function makeDocxBlob() {
+  const {Document,Packer,Paragraph,ImageRun,AlignmentType,SectionType}=window.docx;
+  const sections=[];
+  for(let i=0;i<state.files.length;i++) {
+    const file=state.files[i], data=new Uint8Array(await file.arrayBuffer()), img=await loadImage(state.urls[i]);
+    const f=fitInside(img.naturalWidth,img.naturalHeight,794,1123), t=mimeFor(file);
+    sections.push({properties:{type:i===0?SectionType.CONTINUOUS:SectionType.NEW_PAGE,page:{size:{width:11906,height:16838},margin:{top:0,right:0,bottom:0,left:0,header:0,footer:0,gutter:0}}},children:[new Paragraph({alignment:AlignmentType.CENTER,spacing:{before:0,after:0,line:0},children:[new ImageRun({data,type:t==="jpg"?"jpg":(["png","gif","bmp"].includes(t)?t:"jpg"),transformation:{width:Math.round(f.width),height:Math.round(f.height)}})]})]});
+  }
+  return Packer.toBlob(new Document({sections}));
+}
+async function doSharePdf(){try{setStatus("Preparing PDF for sharing…");const r=await shareOrDownloadFile(await makePdfBlob(),outputFilename("pdf"),"PDF");setStatus(r==="shared"?"PDF shared.":r==="cancelled"?"Share cancelled.":"PDF downloaded.")}catch(e){console.error(e);setStatus("Could not share PDF: "+(e.message||e),true)}}
+async function doShareDocx(){try{setStatus("Preparing DOCX for sharing…");const r=await shareOrDownloadFile(await makeDocxBlob(),outputFilename("docx"),"A4 DOCX");setStatus(r==="shared"?"DOCX shared.":r==="cancelled"?"Share cancelled.":"DOCX downloaded.")}catch(e){console.error(e);setStatus("Could not share DOCX: "+(e.message||e),true)}}
+document.getElementById("sharePdfBtn")?.addEventListener("click",doSharePdf);
+document.getElementById("shareDocxBtn")?.addEventListener("click",doShareDocx);
+document.getElementById("filenameInput")?.addEventListener("input",()=>{});
