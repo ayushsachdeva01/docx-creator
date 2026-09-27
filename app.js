@@ -75,7 +75,8 @@
       state.urls.push(URL.createObjectURL(file));
     }
     await renderList();
-    setShareButtonsReady(false);
+    setPdfShareReady(false);
+    setDocxShareReady(false);
     prepareShareFiles();
     setStatus(`${state.files.length} image${state.files.length === 1 ? "" : "s"} ready.`);
 
@@ -86,6 +87,7 @@
     state.files.splice(index, 1);
     state.urls.splice(index, 1);
     renderList();
+    prepareShareFiles();
 
     setStatus(state.files.length ? `${state.files.length} images ready.` : "No images selected.");
   }
