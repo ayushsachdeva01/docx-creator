@@ -288,3 +288,18 @@ footer {
 }
 
 .filename-row{margin:0 0 18px;padding:15px;border:1px solid var(--line);border-radius:14px;background:#fbfcfd}.filename-row label{display:block;font-size:13px;font-weight:800;margin-bottom:7px}.filename-wrap{display:flex;align-items:center;border:1px solid #cbd3dc;border-radius:10px;background:#fff;overflow:hidden}.filename-wrap input{min-width:0;flex:1;border:0;outline:0;padding:11px 12px;font:inherit;font-weight:650;background:transparent}.filename-wrap span{padding-right:12px;color:#7b8590;font-size:13px;white-space:nowrap}.filename-row p{margin:6px 0 0;color:#7b8590;font-size:12px}.button-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}.button-row .primary{margin-top:0}.share{background:#eef4ff;color:#174b9d}.share:hover:not(:disabled){background:#dfeaff}
+
+.version-badge{
+  display:inline-flex;
+  align-items:center;
+  width:max-content;
+  margin-bottom:8px;
+  padding:3px 7px;
+  border:1px solid #d8dee6;
+  border-radius:6px;
+  background:#f7f8fa;
+  color:#7a8490;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.06em;
+}

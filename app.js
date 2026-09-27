@@ -76,8 +76,7 @@
     }
     await renderList();
     setStatus(`${state.files.length} image${state.files.length === 1 ? "" : "s"} ready.`);
-  
-    syncShareButtons();
+
 }
 
   function removeAt(index) {
@@ -85,7 +84,7 @@
     state.files.splice(index, 1);
     state.urls.splice(index, 1);
     renderList();
-    syncShareButtons();
+
     setStatus(state.files.length ? `${state.files.length} images ready.` : "No images selected.");
   }
 
@@ -95,7 +94,7 @@
     [state.files[index], state.files[target]] = [state.files[target], state.files[index]];
     [state.urls[index], state.urls[target]] = [state.urls[target], state.urls[index]];
     renderList();
-    syncShareButtons();
+
   }
 
   async function renderList() {
@@ -317,7 +316,7 @@
     state.files = [];
     state.urls = [];
     renderList();
-    syncShareButtons();
+
     setStatus("Cleared.");
   });
 
@@ -404,37 +403,77 @@ function outputFilename(ext) {
   return sanitizeOutputFilename(el ? el.value : "images") + "." + ext
 }
 async function shareFileNative(blob, filename, title) {
-  const file = new File([blob], filename, { type: blob.type })
-  const canShareFiles = navigator.share &&
-    (!navigator.canShare || navigator.canShare({ files: [file] }))
-  if (canShareFiles) {
-    try {
-      await navigator.share({ title, files: [file] })
-      return "shared"
-    } catch (e) {
-      if (e && e.name === "AbortError") return "cancelled"
+  const file = new File([blob], filename, {
+    type: blob.type || "application/octet-stream"
+  });
+
+  if (typeof navigator.share === "function") {
+    let shareable = true;
+    if (typeof navigator.canShare === "function") {
+      try {
+        shareable = navigator.canShare({ files: [file] });
+      } catch (_) {
+        shareable = false;
+      }
+    }
+
+    if (shareable) {
+      try {
+        await navigator.share({ title: title || filename, files: [file] });
+        return "shared";
+      } catch (e) {
+        if (e && e.name === "AbortError") return "cancelled";
+        console.warn("Native share failed; using download fallback.", e);
+      }
     }
   }
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1500)
-  return "downloaded"
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  return "downloaded";
 }
 
 setTimeout(syncShareButtons, 0)
 
 
-function syncShareButtons() {
-  const hasImages = Array.isArray(state.files) && state.files.length > 0;
-  const pdfShare = document.getElementById("sharePdfBtn");
-  const docxShare = document.getElementById("shareDocxBtn");
-  if (pdfShare) pdfShare.disabled = !hasImages;
-  if (docxShare) docxShare.disabled = !hasImages;
-}
 
-syncShareButtons();
+document.getElementById("sharePdfBtn")?.addEventListener("click", async () => {
+  if (!Array.isArray(state.files) || state.files.length === 0) {
+    setStatus("Upload at least one image first.", true);
+    return;
+  }
+  try {
+    setStatus("Preparing PDF for sharing…");
+    const blob = await generateSharePdfBlob();
+    const result = await shareFileNative(blob, outputFilename("pdf"), "PDF");
+    setStatus(result === "shared" ? "PDF shared." :
+      result === "cancelled" ? "Share cancelled." : "PDF downloaded.");
+  } catch (e) {
+    console.error(e);
+    setStatus("Could not share PDF: " + (e.message || e), true);
+  }
+});
+
+document.getElementById("shareDocxBtn")?.addEventListener("click", async () => {
+  if (!Array.isArray(state.files) || state.files.length === 0) {
+    setStatus("Upload at least one image first.", true);
+    return;
+  }
+  try {
+    setStatus("Preparing DOCX for sharing…");
+    const blob = await generateShareDocxBlob();
+    const result = await shareFileNative(blob, outputFilename("docx"), "A4 DOCX");
+    setStatus(result === "shared" ? "DOCX shared." :
+      result === "cancelled" ? "Share cancelled." : "DOCX downloaded.");
+  } catch (e) {
+    console.error(e);
+    setStatus("Could not share DOCX: " + (e.message || e), true);
+  }
+});
