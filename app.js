@@ -76,13 +76,16 @@
     }
     await renderList();
     setStatus(`${state.files.length} image${state.files.length === 1 ? "" : "s"} ready.`);
-  }
+  
+    syncShareButtons();
+}
 
   function removeAt(index) {
     URL.revokeObjectURL(state.urls[index]);
     state.files.splice(index, 1);
     state.urls.splice(index, 1);
     renderList();
+    syncShareButtons();
     setStatus(state.files.length ? `${state.files.length} images ready.` : "No images selected.");
   }
 
@@ -92,6 +95,7 @@
     [state.files[index], state.files[target]] = [state.files[target], state.files[index]];
     [state.urls[index], state.urls[target]] = [state.urls[target], state.urls[index]];
     renderList();
+    syncShareButtons();
   }
 
   async function renderList() {
@@ -313,6 +317,7 @@
     state.files = [];
     state.urls = [];
     renderList();
+    syncShareButtons();
     setStatus("Cleared.");
   });
 
@@ -386,3 +391,50 @@ async function doShareDocx(){try{setStatus("Preparing DOCX for sharing…");cons
 document.getElementById("sharePdfBtn")?.addEventListener("click",doSharePdf);
 document.getElementById("shareDocxBtn")?.addEventListener("click",doShareDocx);
 document.getElementById("filenameInput")?.addEventListener("input",()=>{});
+
+
+// Native Android/iOS file sharing + custom filenames.
+function sanitizeOutputFilename(value) {
+  let name = String(value || "").trim()
+  name = name.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\.+$/g, "")
+  return name || "images"
+}
+function outputFilename(ext) {
+  const el = document.getElementById("filenameInput")
+  return sanitizeOutputFilename(el ? el.value : "images") + "." + ext
+}
+async function shareFileNative(blob, filename, title) {
+  const file = new File([blob], filename, { type: blob.type })
+  const canShareFiles = navigator.share &&
+    (!navigator.canShare || navigator.canShare({ files: [file] }))
+  if (canShareFiles) {
+    try {
+      await navigator.share({ title, files: [file] })
+      return "shared"
+    } catch (e) {
+      if (e && e.name === "AbortError") return "cancelled"
+    }
+  }
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1500)
+  return "downloaded"
+}
+
+setTimeout(syncShareButtons, 0)
+
+
+function syncShareButtons() {
+  const hasImages = Array.isArray(state.files) && state.files.length > 0;
+  const pdfShare = document.getElementById("sharePdfBtn");
+  const docxShare = document.getElementById("shareDocxBtn");
+  if (pdfShare) pdfShare.disabled = !hasImages;
+  if (docxShare) docxShare.disabled = !hasImages;
+}
+
+syncShareButtons();
